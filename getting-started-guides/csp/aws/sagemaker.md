@@ -1,12 +1,12 @@
 # Get Started with XGBoost4J-Spark on AWS SageMaker
 
-This is a getting started guide to XGBoost4J-Spark on AWS SageMaker with AWS EMR. At the end of this guide, the reader will be able to run a sample Apache Spark application that runs on NVIDIA GPUs on AWS SageMaker using AWS EMR cluster.
+This is a getting started guide to XGBoost4J-Spark on AWS SageMaker. At the end of this guide, the reader will be able to run a sample Apache Spark application that runs on NVIDIA GPUs on AWS SageMaker.
 
 ### Configure and Launch AWS EMR with GPU Nodes
 
-Please follow [Get Started with XGBoost4J-Spark on AWS EMR](emr.md#configure-and-launch-aws-emr-with-gpu-nodes) to configure and launch AWS EMR with GPU Nodes.
+Please follow [this guide](emr.md#configure-and-launch-aws-emr-with-gpu-nodes) to configure and launch AWS EMR with GPU Nodes.
 
-### Load XGBoost-Spark Examples Dataset on EMR
+### Launch XGBoost-Spark Examples on EMR
 
 Last, let's follow this guide [Get Started with XGBoost4J-Spark on Apache Hadoop YARN](/getting-started-guides/on-premises-cluster/yarn-scala.md) to just upload data on Spark. (The other options is to put data on AWS S3 that can be accessed by Amazon SageMaker Notebook.)
 
@@ -19,12 +19,12 @@ wget https://rapidsai-data.s3.us-east-2.amazonaws.com/spark/mortgage.zip
 unzip mortgage.zip
 cd ..
 hadoop fs -mkdir /tmp/xgboost4j_spark
-hadoop fs -copyFromLocal ./data/ /tmp/xgboost4j_spark
+hadoop fs -copyFromLocal * /tmp/xgboost4j_spark
 ```
 
 ### Launch SageMaker Notebook
 
-Please follow this [AWS blog](https://aws.amazon.com/blogs/machine-learning/build-amazon-sagemaker-notebooks-backed-by-spark-in-amazon-emr/) for the steps to setup Spark Livy with AWS Sagemaker and EMR.
+Please follow the [AWS blog](https://aws.amazon.com/blogs/machine-learning/build-amazon-sagemaker-notebooks-backed-by-spark-in-amazon-emr/) for the steps to setup Spark Livy with EMR.
 
 First launch a SageMaker Notebook Instance with default setting. In the network settings, please select the same VPC and Subnet where your EMR cluster is in and also select a security group for notebook instance.
 
@@ -58,13 +58,17 @@ mv example_config.json config.json
 
 Then you need to edit the config.json, and replace every instance of `localhost` with the Private IP of your EMR Master that you used earlier. Mine is 10.0.0.65, which we saw earlier, but yours will be different!
 
-I used the following commands with vi:
+I used the following commands:
 
 ```
-vi config.json
-[ESC key]
-:%s/localhost/10.0.0.65/g
-:wq
+nano config.json
+ctrl+\
+localhost
+<your EMR Master private IP>
+a
+ctrl+x
+y
+enter
 ```
 
 This should replace three instances of localhost in the "url" field of the three kernel credentials. Feel free to use any editor you are comfortable with, and save the changes.
@@ -99,7 +103,6 @@ Type shift and enter at the same time to run the cell, and you should see someth
 
 You now have a Sparkmagic kernel running in your Jupyter notebook, talking to your EMR Spark cluster by using Livy.
 
-
 ### Run the Example on SageMaker Notebook
 
 Now Launch the GPU Mortgage Example:
@@ -127,13 +130,12 @@ object Benchmark {
   }
 }
 
-// import notebook source
+// Databricks notebook source
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.ml.evaluation.RegressionEvaluator
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import org.apache.spark.sql.types.{DoubleType, IntegerType, StructField, StructType}
 import ml.dmlc.xgboost4j.scala.spark.{XGBoostClassifier, XGBoostClassificationModel}
-import ml.dmlc.xgboost4j.scala.spark.rapids.{GpuDataReader, GpuDataset}
 
 // COMMAND ----------
 val trainPath = "hdfs:/tmp/xgboost4j_spark/data/mortgage/csv/train/"
@@ -242,11 +244,4 @@ println(accuracy)
 
 In the notebook output, you should see the training, inference and accuracy metrics.
 
------- Training ------
-==> Benchmark: Elapsed time for [train]: 21.6s
-
------- Transforming ------
-==> Benchmark: Elapsed time for [transform]: 1.352s
-
-------Accuracy of Evaluation------
-accuracy: Double = 0.9875258447219547
+![Output](pics/sagemaker-output.png)

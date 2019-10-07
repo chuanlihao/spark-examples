@@ -1,0 +1,189 @@
+#!/usr/local/env groovy
+/**
+*
+* Jenkins file for xgboost with multi versions
+*
+*/
+
+pipeline {
+    agent none
+
+    options {
+        ansiColor('xterm')
+        timestamps()
+        timeout(time: 240, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
+    parameters {
+        string(name: 'CUDF_VER', defaultValue: '0.9-SNAPSHOT',
+            description: '-Dcudf.version=0.9-SNAPSHOT\n\n Defautl for cudf version')
+        string(name: 'XGB_VER', defaultValue: '1.0.0-SNAPSHOT',
+            description: '-Dxgboost.version=1.0.0-SNAPSHOT\n\n Defautl for xgboost version')
+        choice(name: 'REPO_TYPE', choices: ['Local', 'Sonatype', 'Gpuwa'],
+            description: 'Repo server where to download xgboost and cudf dependent jars.')
+        booleanParam(name: 'FULL_TEST_SPARK', defaultValue: true,
+            description: 'Whether to test on spark2.3.3 & spark2.4.3, default to run test on spark2.3.3 & spark2.4.3')
+        booleanParam(name: 'SIMPLE_DATA', defaultValue: false,
+            description: 'simple datasets')
+    }
+
+    environment {
+        JENKINS_ROOT  = 'jenkins'
+        BUILD_SCRIPT = '$JENKINS_ROOT/build-sample.sh'
+        TEST_SCRIPT = '$JENKINS_ROOT/test-sample.sh'
+        BUILD_ARG="-Dcudf.version=$CUDF_VER -Dxgboost.version=$XGB_VER"
+        TEST_ARG_CUDA9_SPARK233="9.2 $CUDF_VER $XGB_VER ${params.SIMPLE_DATA} 2.3.3"
+        TEST_ARG_CUDA9_SPARK243="9.2 $CUDF_VER $XGB_VER ${params.SIMPLE_DATA} 2.4.3"
+        TEST_ARG_CUDA10_SPARK233="10.0 $CUDF_VER $XGB_VER ${params.SIMPLE_DATA} 2.3.3"
+        TEST_ARG_CUDA10_SPARK243="10.0 $CUDF_VER $XGB_VER ${params.SIMPLE_DATA} 2.4.3"
+        TEST_ARG_CUDA101_SPARK243="10.1 $CUDF_VER $XGB_VER ${params.SIMPLE_DATA} 2.4.3"
+        TEST_ARG_CUDA101_SPARK233="10.1 $CUDF_VER $XGB_VER ${params.SIMPLE_DATA} 2.3.3"
+    }
+
+    stages {
+        stage('Build and Test') {
+            parallel {
+                stage('Ubuntu16 CUDA9.2') {
+                    agent { label 'docker-gpu' }
+                    steps {
+                        script {
+                            def dockerImage = docker.build("nvidia/cuda:ubuntu16-cuda9.2",
+                                    "-f $JENKINS_ROOT/Dockerfile.ubuntu16 --build-arg CUDA_VER=9.2 $JENKINS_ROOT")
+                            dockerImage.inside {
+                                echo 'building ubuntu16 cuda9.2 ...'
+                                sh "bash $BUILD_SCRIPT '$BUILD_ARG'"
+                            }
+                            dockerImage.inside ('--runtime=nvidia  -v /data:/data:ro -v /etc/passwd:/etc/passwd:ro') {
+                                echo 'testing sample app on ubuntu16 cuda9.2 ...'
+                                sh "bash -i $TEST_SCRIPT $TEST_ARG_CUDA9_SPARK233"
+                                if (params.FULL_TEST_SPARK) {
+                                    sh "bash -i $TEST_SCRIPT $TEST_ARG_CUDA9_SPARK243"
+                                }
+                            }
+                        }
+                    }
+                }
+
+                stage('Ubuntu16 CUDA10.0') {
+                    agent { label 'docker-gpu' }
+                    steps {
+                        script {
+                            def dockerImage = docker.build("nvidia/cuda:ubuntu16-cuda10.0",
+                                "-f $JENKINS_ROOT/Dockerfile.ubuntu16  --build-arg CUDA_VER=10.0 $JENKINS_ROOT")
+                            dockerImage.inside {
+                                echo 'building ubuntu16 cuda10.0 ...'
+                                sh "bash $BUILD_SCRIPT '$BUILD_ARG' cuda10"
+                            }
+                            dockerImage.inside("--runtime=nvidia -v /data:/data:ro -v /etc/passwd:/etc/passwd:ro") {
+                                echo 'testing sample app on ubuntu16 cuda10.0 ...'
+                                sh "bash -i $TEST_SCRIPT $TEST_ARG_CUDA10_SPARK243"
+                                if (params.FULL_TEST_SPARK) {
+                                    sh "bash -i $TEST_SCRIPT $TEST_ARG_CUDA10_SPARK233"
+                                }
+                            }
+                        }
+                    }
+                }
+
+                stage('Ubuntu16 CUDA10.1') {
+                    agent { label 'docker-gpu' }
+                    steps {
+                        script {
+                            def dockerImage = docker.build("nvidia/cuda:ubuntu16-cuda10.1",
+                                "-f $JENKINS_ROOT/Dockerfile.ubuntu16  --build-arg CUDA_VER=10.1 $JENKINS_ROOT")
+                            dockerImage.inside {
+                                echo 'building ubuntu16 cuda10.1 ...'
+                                sh "bash $BUILD_SCRIPT '$BUILD_ARG' cuda10-1"
+                            }
+                            dockerImage.inside("--runtime=nvidia -v /data:/data:ro -v /etc/passwd:/etc/passwd:ro") {
+                                echo 'testing sample app on ubuntu16 cuda10.1 ...'
+                                sh "bash -i $TEST_SCRIPT $TEST_ARG_CUDA101_SPARK243"
+                                if (params.FULL_TEST_SPARK) {
+                                    sh "bash -i $TEST_SCRIPT $TEST_ARG_CUDA101_SPARK233"
+                                }
+                            }
+                        }
+                    }
+                }
+
+                stage('Centos7 CUDA9.2') {
+                    agent { label 'docker-gpu' }
+                    steps {
+                        script {
+                            def dockerImage = docker.build("nvidia/cuda:centos7-cuda9.2",
+                                "-f $JENKINS_ROOT/Dockerfile.centos7  --build-arg CUDA_VER=9.2 $JENKINS_ROOT")
+                            dockerImage.inside {
+                                echo 'building centos7 cuda9.2 ...'
+                                sh "bash $BUILD_SCRIPT '$BUILD_ARG'"
+                            }
+                            dockerImage.inside("--runtime=nvidia -v /data:/data:ro -v /etc/passwd:/etc/passwd:ro") {
+                                echo 'testing sample app on centos7 cuda9.2 ...'
+                                sh "bash -i $TEST_SCRIPT $TEST_ARG_CUDA9_SPARK233"
+                                if (params.FULL_TEST_SPARK) {
+                                    sh "bash -i $TEST_SCRIPT $TEST_ARG_CUDA9_SPARK243"
+                                }
+                            }
+                        }
+                    }
+                }
+
+                stage('Centos7 CUDA10.0') {
+                    agent { label 'docker-gpu' }
+                    steps {
+                        script {
+                            def dockerImage = docker.build("nvidia/cuda:centos7-cuda10.0",
+                                "-f $JENKINS_ROOT/Dockerfile.centos7  --build-arg CUDA_VER=10.0 $JENKINS_ROOT")
+                            dockerImage.inside {
+                                echo 'building centos7 cuda10.0 ...'
+                                sh "bash $BUILD_SCRIPT '$BUILD_ARG' cuda10"
+                            }
+                            dockerImage.inside("--runtime=nvidia -v /data:/data:ro -v /etc/passwd:/etc/passwd:ro") {
+                                echo 'testing sample app on centos7 cuda10.0 ...'
+                                sh "bash -i $TEST_SCRIPT $TEST_ARG_CUDA10_SPARK243"
+                                if (params.FULL_TEST_SPARK) {
+                                    sh "bash -i $TEST_SCRIPT $TEST_ARG_CUDA10_SPARK233"
+                                }
+                            }
+                        }
+                    }
+                }
+
+                stage('Centos7 CUDA10.1') {
+                    when {
+                        environment name: 'BUILD_CENTOS7', value: 'true'
+                    }
+                    agent { label 'docker-gpu' }
+                    steps {
+                        script {
+                            def dockerImage = docker.build("nvidia/cuda:centos7-cuda10.1",
+                                "-f $JENKINS_ROOT/Dockerfile.centos7  --build-arg CUDA_VER=10.1 $JENKINS_ROOT")
+                            dockerImage.inside {
+                                echo 'building centos7 cuda10.1 ...'
+                                sh "bash $BUILD_SCRIPT '$BUILD_ARG' cuda10-1"
+                            }
+                            dockerImage.inside("--runtime=nvidia -v /data:/data:ro -v /etc/passwd:/etc/passwd:ro") {
+                                echo 'testing sample app on centos7 cuda10.1 ...'
+                                sh "bash -i $TEST_SCRIPT $TEST_ARG_CUDA101_SPARK243"
+                                if (params.FULL_TEST_SPARK) {
+                                    sh "bash -i $TEST_SCRIPT $TEST_ARG_CUDA101_SPARK233"
+                                }
+                            }
+                        }
+                    }
+                }
+            }//end of parallel
+        }//end of stage('build and test')
+    } // end of stages
+    post {
+        always {
+            script {
+                def status = "failed"
+                if (currentBuild.currentResult == "SUCCESS")
+                    status = "success"
+            }
+
+            echo 'Pipeline finished!'
+        }
+    }
+} // end of pipeline
